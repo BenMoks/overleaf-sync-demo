@@ -1,0 +1,50 @@
+name: Build PDF on push
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute changelist info
+        id: meta
+        run: |
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "DATE=$(date -u +'%Y-%m-%dT%H:%MZ')" >> $GITHUB_OUTPUT
+
+      - name: Write version.tex
+        run: |
+          echo "\newcommand{\buildversion}{v0.1-${{ steps.meta.outputs.SHORT_SHA }} (${{ steps.meta.outputs.DATE }})}" > version.tex
+          cat version.tex
+
+      - name: Compile LaTeX
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+
+      - name: Save PDF into build/
+        run: |
+          mkdir -p build
+          cp main.pdf build/overleaf-${{ steps.meta.outputs.SHORT_SHA }}.pdf
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-pdf-${{ steps.meta.outputs.SHORT_SHA }}
+          path: build/*.pdf
+
+      - name: Commit PDF + version.tex back to repo
+        run: |
+          git config user.name  "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add build/*.pdf version.tex
+          git commit -m "CI: PDF for ${{ steps.meta.outputs.SHORT_SHA }}" || echo "No changes"
+          git push
